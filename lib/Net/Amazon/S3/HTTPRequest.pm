@@ -69,8 +69,20 @@ sub query_string_authentication_uri {
     my $path    = $self->path;
     my $headers = $self->headers;
 
+    if ($self->s3->use_iam_role) {
+        my $creds = VM::EC2::Security::CredentialCache->get();
+        defined($creds) || die("Unable to retrieve IAM role credentials");
+        $self->s3->aws_access_key_id($creds->accessKeyId);
+        $self->s3->aws_secret_access_key($creds->secretAccessKey);
+        $self->s3->aws_session_token($creds->sessionToken);
+    }
+
     my $aws_access_key_id     = $self->s3->aws_access_key_id;
     my $aws_secret_access_key = $self->s3->aws_secret_access_key;
+    my $aws_session_token     = $self->s3->aws_session_token;
+    if ($aws_session_token) {
+        $headers->{'x-amz-security-token'} = $aws_session_token;
+    }
     my $canonical_string
         = $self->_canonical_string( $method, $path, $headers, $expires );
     my $encoded_canonical
@@ -90,6 +102,9 @@ sub query_string_authentication_uri {
 
     $uri->query_param( AWSAccessKeyId => $aws_access_key_id );
     $uri->query_param( Expires        => $expires );
+    if ($aws_session_token) {
+        $uri->query_param( 'x-amz-security-token' => $aws_session_token );
+    }
     $uri->query_param( Signature      => $encoded_canonical );
 
     return $uri;
